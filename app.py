@@ -102,7 +102,7 @@ if "financial_view" not in st.session_state:
     st.session_state.financial_view = None
 
 # ----------------------------
-# METRIC ENGINE
+# METRIC ENGINE (IMPROVED ACCURACY)
 # ----------------------------
 
 def compute_metrics(ticker):
@@ -113,40 +113,120 @@ def compute_metrics(ticker):
     balance = t.balance_sheet
     cashflow = t.cashflow
 
-    net_income = find_value(income, ["Net Income"])
-    revenue = find_value(income, ["Total Revenue"])
-    op_income = find_value(income, ["Operating Income", "EBIT"])
-    interest = find_value(income, ["Interest Expense"])
+    # ----------------------------
+    # INCOME STATEMENT
+    # ----------------------------
 
-    equity = find_value(balance, ["Total Stockholder Equity", "Stockholders Equity"])
-    debt = find_value(balance, ["Total Debt", "Long Term Debt"])
-    current_assets = find_value(balance, ["Total Current Assets"])
-    current_liab = find_value(balance, ["Total Current Liabilities"])
+    net_income = find_value(income, [
+        "Net Income",
+        "Net Income Common Stockholders",
+        "Net Income From Continuing Operations"
+    ])
 
-    depreciation = find_value(cashflow, ["Depreciation", "Depreciation & Amortization"])
-    capex = find_value(cashflow, ["Capital Expenditures"])
+    revenue = find_value(income, [
+        "Total Revenue",
+        "Revenue"
+    ])
 
-    if capex:
+    op_income = find_value(income, [
+        "Operating Income",
+        "EBIT"
+    ])
+
+    interest = find_value(income, [
+        "Interest Expense",
+        "Interest Expense Non Operating"
+    ])
+
+    # ----------------------------
+    # BALANCE SHEET
+    # ----------------------------
+
+    equity = find_value(balance, [
+        "Total Stockholder Equity",
+        "Stockholders Equity"
+    ])
+
+    total_debt = find_value(balance, [
+        "Total Debt"
+    ])
+
+    long_debt = find_value(balance, [
+        "Long Term Debt"
+    ])
+
+    short_debt = find_value(balance, [
+        "Short Long Term Debt",
+        "Short Term Debt"
+    ])
+
+    # Build debt if Total Debt missing
+    debt = total_debt
+    if debt is None:
+        debt = (long_debt or 0) + (short_debt or 0)
+
+    current_assets = find_value(balance, [
+        "Total Current Assets"
+    ])
+
+    current_liab = find_value(balance, [
+        "Total Current Liabilities"
+    ])
+
+    # ----------------------------
+    # CASH FLOW
+    # ----------------------------
+
+    depreciation = find_value(cashflow, [
+        "Depreciation",
+        "Depreciation & Amortization"
+    ])
+
+    capex = find_value(cashflow, [
+        "Capital Expenditures"
+    ])
+
+    free_cash_flow = find_value(cashflow, [
+        "Free Cash Flow"
+    ])
+
+    if capex is not None:
         capex = abs(capex)
 
-    fcf = None
-    if net_income is not None:
-        fcf = (net_income or 0) + (depreciation or 0) - (capex or 0)
+    # Build FCF if missing
+    if free_cash_flow is None and net_income is not None:
+        free_cash_flow = (net_income or 0) + (depreciation or 0) - (capex or 0)
+
+    # ----------------------------
+    # RATIOS
+    # ----------------------------
 
     debt_equity = safe_div(debt, equity)
+
     current_ratio = safe_div(current_assets, current_liab)
-    interest_coverage = safe_div(op_income, abs(interest)) if interest else None
-    fcf_conversion = safe_div(fcf, net_income)
-    fcf_margin = safe_div(fcf, revenue)
+
+    interest_coverage = None
+    if op_income is not None and interest not in (None, 0):
+        interest_coverage = safe_div(op_income, abs(interest))
+
+    fcf_conversion = safe_div(free_cash_flow, net_income)
+
+    fcf_margin = safe_div(free_cash_flow, revenue)
+
     roe = safe_div(net_income, equity)
 
+    # ----------------------------
+    # ROIC (Cleaner)
+    # ----------------------------
+
     invested_capital = None
-    if debt and equity:
+    if debt is not None and equity is not None:
         invested_capital = debt + equity
 
     roic = None
-    if op_income and invested_capital:
-        nopat = op_income * 0.79
+    if op_income is not None and invested_capital not in (None, 0):
+        tax_rate = 0.21  # conservative default
+        nopat = op_income * (1 - tax_rate)
         roic = safe_div(nopat, invested_capital)
 
     return {
@@ -342,25 +422,29 @@ if st.session_state.financials:
         cashflow = ticker_obj.quarterly_cashflow
 
     # TIGHT BUTTON ROW
-    fcol1, fcol2, fcol3 = st.columns([1,1,1], gap="small")
+    button_container = st.container()
 
-    with fcol1:
+    with button_container:
+        st.markdown("""
+        <div style="display:flex; gap:6px;">
+        """, unsafe_allow_html=True)
+
         if st.button("Income Statement", key="income_btn"):
             st.session_state.financial_view = "income"
 
-    with fcol2:
         if st.button("Balance Sheet", key="balance_btn"):
-            st.session_state.financial_view = "balance"
+        st.session_state.financial_view = "balance"
 
-    with fcol3:
         if st.button("Cash Flow", key="cashflow_btn"):
-            st.session_state.financial_view = "cashflow"
+        st.session_state.financial_view = "cashflow"
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
     def format_statement(df):
         if df is None:
             return None
         df = df.iloc[:, ::-1]
-        return (df / 1_000_000_000).round(2)
+        return (df / 1_000_000).round(2)
 
     def render_table(df):
         if df is None:
@@ -370,13 +454,13 @@ if st.session_state.financials:
         st.markdown(html, unsafe_allow_html=True)
 
     if st.session_state.financial_view == "income" and income is not None:
-        st.markdown("### Income Statement (Billions)")
+        st.markdown("### Income Statement (Millions)")
         render_table(income)
 
     if st.session_state.financial_view == "balance" and balance is not None:
-        st.markdown("### Balance Sheet (Billions)")
+        st.markdown("### Balance Sheet (Millions)")
         render_table(balance)
 
     if st.session_state.financial_view == "cashflow" and cashflow is not None:
-        st.markdown("### Cash Flow (Billions)")
+        st.markdown("### Cash Flow (Millions)")
         render_table(cashflow)
