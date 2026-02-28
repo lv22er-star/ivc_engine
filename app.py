@@ -14,34 +14,42 @@ st.set_page_config(layout="wide")
 
 st.markdown("""
 <style>
-#MainMenu {visibility:hidden;}
-footer {visibility:hidden;}
-header {visibility:hidden;}
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
 
 table {
-    width:100% !important;
-    table-layout:fixed !important;
-    border-collapse:collapse !important;
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
 }
 
 th, td {
-    padding:12px !important;
-    text-align:center !important;
-    vertical-align:middle !important;
+    padding: 6px;
+    text-align: center;
+    vertical-align: middle;
 }
 
 th {
-    font-weight:600 !important;
+    font-weight: 600;
 }
 
-.col-metric { width:18%; }
-.col-formula { width:25%; }
-.col-threshold { width:10%; }
-.col-value { width:12%; }
-.col-why { width:35%; }
+.col-metric { width: 18%; }
+.col-formula { width: 28%; }
+.col-threshold { width: 10%; }
+.col-value { width: 12%; }
+.col-why { width: 32%; }
 
-button[kind="secondary"] {
-    margin-right:6px !important;
+/* Tighter buttons */
+div.stButton > button {
+    margin-right: 2px;
+    padding: 4px 10px;
+}
+
+/* Remove extra column spacing */
+div[data-testid="column"] {
+    padding-left: 4px !important;
+    padding-right: 4px !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -307,7 +315,7 @@ if st.session_state.run:
     """
 
     st.markdown(html_section3, unsafe_allow_html=True)
-    # ----------------------------
+# ----------------------------
 # FINANCIALS VIEW (DO NOT TOUCH DASHBOARD ABOVE)
 # ----------------------------
 
@@ -333,7 +341,8 @@ if st.session_state.financials:
         balance = ticker_obj.quarterly_balance_sheet
         cashflow = ticker_obj.quarterly_cashflow
 
-    fcol1, fcol2, fcol3 = st.columns([1,1,1])
+    # TIGHT BUTTON ROW
+    fcol1, fcol2, fcol3 = st.columns([1,1,1], gap="small")
 
     with fcol1:
         if st.button("Income Statement", key="income_btn"):
@@ -353,14 +362,21 @@ if st.session_state.financials:
         df = df.iloc[:, ::-1]
         return (df / 1_000_000_000).round(2)
 
+    def render_table(df):
+        if df is None:
+            return
+        df = format_statement(df)
+        html = df.to_html(classes="financial-table")
+        st.markdown(html, unsafe_allow_html=True)
+
     if st.session_state.financial_view == "income" and income is not None:
         st.markdown("### Income Statement (Billions)")
-        st.dataframe(format_statement(income), use_container_width=True)
+        render_table(income)
 
     if st.session_state.financial_view == "balance" and balance is not None:
         st.markdown("### Balance Sheet (Billions)")
-        st.dataframe(format_statement(balance), use_container_width=True)
+        render_table(balance)
 
     if st.session_state.financial_view == "cashflow" and cashflow is not None:
         st.markdown("### Cash Flow (Billions)")
-        st.dataframe(format_statement(cashflow), use_container_width=True)
+        render_table(cashflow)
