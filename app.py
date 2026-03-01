@@ -95,8 +95,9 @@ def find_value(df, labels):
         if label in df.index:
             return df.loc[label].iloc[0]
     return None
+
 # ----------------------------
-# STATE
+# SESSION STATE (SINGLE SOURCE OF TRUTH)
 # ----------------------------
 
 if "run" not in st.session_state:
@@ -105,7 +106,9 @@ if "run" not in st.session_state:
 if "financials" not in st.session_state:
     st.session_state.financials = False
 
-# 👇 ADD THIS LINE RIGHT HERE
+if "show_classify" not in st.session_state:
+    st.session_state.show_classify = False
+
 if "financial_view" not in st.session_state:
     st.session_state.financial_view = None
 
@@ -169,9 +172,7 @@ def compute_metrics(ticker):
     ])
 
     # Build debt if Total Debt missing
-    # Build debt safely
     debt = total_debt
-
     if debt is None:
         debt = (long_debt or 0) + (short_debt or 0)
 
@@ -190,24 +191,25 @@ def compute_metrics(ticker):
         "Current Liabilities",
         "Current Liabilities Total"
     ])
+
     # If liabilities exist but assets missing, try to compute from components
     if current_assets is None:
-
         cash = find_value(balance, ["Cash And Cash Equivalents", "Cash"]) or 0
         receivables = find_value(balance, ["Accounts Receivable"]) or 0
         inventory = find_value(balance, ["Inventory"]) or 0
 
         total_components = cash + receivables + inventory
-
         if total_components > 0:
-             current_assets = total_components
+            current_assets = total_components
+
     # ----------------------------
     # CASH FLOW
     # ----------------------------
 
     depreciation = find_value(cashflow, [
         "Depreciation",
-        "Depreciation & Amortization"
+        "Depreciation & Amortization",
+        "Depreciation And Amortization"
     ])
 
     capex = find_value(cashflow, [
@@ -223,13 +225,8 @@ def compute_metrics(ticker):
     # ----------------------------
 
     fcf_stability = None
-
     if cashflow is not None and "Free Cash Flow" in cashflow.index:
-        fcf_series = cashflow.loc["Free Cash Flow"]
-
-        # Reverse to chronological order
-        fcf_series = fcf_series[::-1]
-
+        fcf_series = cashflow.loc["Free Cash Flow"][::-1]  # chronological
         if len(fcf_series) >= 5:
             last5 = fcf_series.iloc[-5:]
             fcf_stability = all(x > 0 for x in last5 if x is not None)
@@ -246,7 +243,6 @@ def compute_metrics(ticker):
     # ----------------------------
 
     debt_equity = safe_div(debt, equity)
-
     current_ratio = safe_div(current_assets, current_liab)
 
     interest_coverage = None
@@ -254,9 +250,7 @@ def compute_metrics(ticker):
         interest_coverage = safe_div(op_income, abs(interest))
 
     fcf_conversion = safe_div(free_cash_flow, net_income)
-
     fcf_margin = safe_div(free_cash_flow, revenue)
-
     roe = safe_div(net_income, equity)
 
     # ----------------------------
@@ -290,40 +284,41 @@ def compute_metrics(ticker):
     }
 
 # ----------------------------
-# STATE
-# ----------------------------
-
-if "run" not in st.session_state:
-    st.session_state.run = False
-
-if "financials" not in st.session_state:
-    st.session_state.financials = False
-
-# ----------------------------
-# HEADER
+# HEADER + BUTTONS (UNCHANGED LOOK, FIXED LOGIC)
 # ----------------------------
 
 st.title("Buffett & Lynch Core Metrics + Stock Diagnostic Dashboard")
 
-ticker = st.text_input("Enter Ticker", "CLOV")
+col_ticker, col_spacer = st.columns([1, 7])
 
-btn1, btn2, _ = st.columns([1,1,6])
+with col_ticker:
+    ticker = st.text_input("Enter Ticker", "CLOV")
+
+with col_spacer:
+    st.empty()
+
+btn1, btn2, btn3, _ = st.columns([1,1,1,6])
 
 with btn1:
     if st.button("Run Analysis"):
         st.session_state.run = not st.session_state.run
         st.session_state.financials = False
-
-    if st.button("Classify", use_container_width=True):
-        st.session_state["show_classify"] = not st.session_state.get("show_classify", False)
+        st.session_state.show_classify = False
 
 with btn2:
+    if st.button("Classify"):
+        st.session_state.show_classify = not st.session_state.show_classify
+        st.session_state.run = False
+        st.session_state.financials = False
+
+with btn3:
     if st.button("Financials"):
         st.session_state.financials = not st.session_state.financials
         st.session_state.run = False
+        st.session_state.show_classify = False
 
 # ----------------------------
-# DASHBOARD VIEW
+# DASHBOARD VIEW (YOUR ORIGINAL)
 # ----------------------------
 
 if st.session_state.run:
@@ -348,7 +343,7 @@ if st.session_state.run:
         </th>
     </tr>
     <tr>
-    <th class="col-metric">Metric</th>
+        <th class="col-metric">Metric</th>
         <th class="col-formula">Formula</th>
         <th class="col-threshold">Threshold</th>
         <th class="col-value">Current Value</th>
@@ -366,7 +361,7 @@ if st.session_state.run:
         <td>Current Assets ÷ Current Liabilities</td>
         <td>&gt; 1.5</td>
         <td>{color_value(fmt_num(metrics["current_ratio"]), current_pass)}</td>
-        <td>MMeasures short-term liquidity — whether the company can comfortably pay its bills over the next 12 months.</td>
+        <td>Measures short-term liquidity — whether the company can comfortably pay its bills over the next 12 months.</td>
     </tr>
     <tr>
         <td>Interest Coverage</td>
@@ -377,7 +372,6 @@ if st.session_state.run:
     </tr>
     </table>
     """
-
     st.markdown(html_section1, unsafe_allow_html=True)
 
     # ----------------------------
@@ -396,7 +390,8 @@ if st.session_state.run:
             Are the earnings real and durable?
         </th>
     </tr>
-    <th class="col-metric">Metric</th>
+    <tr>
+        <th class="col-metric">Metric</th>
         <th class="col-formula">Formula</th>
         <th class="col-threshold">Threshold</th>
         <th class="col-value">Current Value</th>
@@ -426,7 +421,6 @@ if st.session_state.run:
     </tr>
     </table>
     """
-
     st.markdown(html_section2, unsafe_allow_html=True)
 
     # ----------------------------
@@ -445,7 +439,8 @@ if st.session_state.run:
             Can it compound capital?
         </th>
     </tr>
-    <th class="col-metric">Metric</th>
+    <tr>
+        <th class="col-metric">Metric</th>
         <th class="col-formula">Formula</th>
         <th class="col-threshold">Threshold</th>
         <th class="col-value">Current Value</th>
@@ -467,22 +462,17 @@ if st.session_state.run:
     </tr>
     </table>
     """
-
     st.markdown(html_section3, unsafe_allow_html=True)
+
 # ----------------------------
-# FINANCIALS VIEW (DO NOT TOUCH DASHBOARD ABOVE)
+# FINANCIALS VIEW (YOUR ORIGINAL)
 # ----------------------------
 
 if st.session_state.financials:
 
     st.markdown("## Financial Statements")
 
-    # Annual / Quarterly Toggle
-    view_type = st.radio(
-        "Select View:",
-        ["Annual", "Quarterly"],
-        horizontal=True
-    )
+    view_type = st.radio("Select View:", ["Annual", "Quarterly"], horizontal=True)
 
     ticker_obj = yf.Ticker(ticker)
 
@@ -495,24 +485,12 @@ if st.session_state.financials:
         balance = ticker_obj.quarterly_balance_sheet
         cashflow = ticker_obj.quarterly_cashflow
 
-    # TIGHT BUTTON ROW
-    button_container = st.container()
-
-    with button_container:
-        st.markdown("""
-        <div style="display:flex; gap:6px;">
-        """, unsafe_allow_html=True)
-
-        if st.button("Income Statement", key="income_btn"):
-            st.session_state.financial_view = "income"
-
-        if st.button("Balance Sheet", key="balance_btn"):
-            st.session_state.financial_view = "balance"
-
-        if st.button("Cash Flow", key="cashflow_btn"):
-            st.session_state.financial_view = "cashflow"
-
-    st.markdown("</div>", unsafe_allow_html=True)
+    if st.button("Income Statement", key="income_btn"):
+        st.session_state.financial_view = "income"
+    if st.button("Balance Sheet", key="balance_btn"):
+        st.session_state.financial_view = "balance"
+    if st.button("Cash Flow", key="cashflow_btn"):
+        st.session_state.financial_view = "cashflow"
 
     def format_statement(df):
         if df is None:
@@ -540,33 +518,32 @@ if st.session_state.financials:
         render_table(cashflow)
 
 # ----------------------------
-# Show The Classify Section Inline
+# CLASSIFY VIEW (FIXED: NOT NESTED ANYMORE)
 # ----------------------------
 
+if st.session_state.show_classify:
 
-    if st.session_state.get("show_classify", False):
+    st.divider()
+    st.header("Business Classification & Routing")
 
-        st.divider()
-        st.header("Business Classification & Routing")
+    left, middle, right = st.columns([1.2, 1.5, 1])
 
-        left, middle, right = st.columns([1.2, 1.5, 1])
+    with left:
+        st.subheader("Thresholds (Edit as needed)")
+        st.number_input("1) Net PP&E / Total Assets >", value=0.40)
+        st.number_input("2) CapEx / Revenue >", value=0.15)
+        st.number_input("3) Debt / EBITDA >", value=3.50)
+        st.number_input("4) D&A / Revenue >", value=0.10)
+        st.number_input("5) EBITDAR / Invested Capital >", value=0.002)
+        st.number_input("6) Asset Yield (Stability Test) >", value=0.08)
 
-        with left:
-            st.subheader("Thresholds (Edit as needed)")
-            st.number_input("1) Net PP&E / Total Assets >", value=0.40)
-            st.number_input("2) CapEx / Revenue >", value=0.15)
-            st.number_input("3) Debt / EBITDA >", value=3.50)
-            st.number_input("4) D&A / Revenue >", value=0.10)
-            st.number_input("5) EBITDAR / Invested Capital >", value=0.002)
-            st.number_input("6) Asset Yield (Stability Test) >", value=0.08)
+    with middle:
+        st.subheader("Signals (auto-calculated)")
+        st.write("Signal table will render here.")
 
-        with middle:
-            st.subheader("Signals (auto-calculated)")
-            st.write("Signal table will render here.")
-
-        with right:
-            st.subheader("Outputs")
-            st.write("Infrastructure Signals Passed: 0")
-            st.write("Infra Classification (3+ signals): FAIL")
-            st.write("Too Early / Build Phase Flag: PASS")
-            st.write("Routed Model: OWNER_EARNINGS_DCF")    
+    with right:
+        st.subheader("Outputs")
+        st.write("Infrastructure Signals Passed: 0")
+        st.write("Infra Classification (3+ signals): FAIL")
+        st.write("Too Early / Build Phase Flag: PASS")
+        st.write("Routed Model: OWNER_EARNINGS_DCF")
