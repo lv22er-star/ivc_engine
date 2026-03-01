@@ -161,18 +161,38 @@ def compute_metrics(ticker):
     ])
 
     # Build debt if Total Debt missing
+    # Build debt safely
     debt = total_debt
+
     if debt is None:
         debt = (long_debt or 0) + (short_debt or 0)
 
+    # If still None, assume zero debt (common for some companies)
+    if debt is None:
+        debt = 0
+
     current_assets = find_value(balance, [
-        "Total Current Assets"
+        "Total Current Assets",
+        "Current Assets",
+        "Current Assets Total"
     ])
 
     current_liab = find_value(balance, [
-        "Total Current Liabilities"
+        "Total Current Liabilities",
+        "Current Liabilities",
+        "Current Liabilities Total"
     ])
+    # If liabilities exist but assets missing, try to compute from components
+    if current_assets is None:
 
+        cash = find_value(balance, ["Cash And Cash Equivalents", "Cash"]) or 0
+        receivables = find_value(balance, ["Accounts Receivable"]) or 0
+        inventory = find_value(balance, ["Inventory"]) or 0
+
+        total_components = cash + receivables + inventory
+
+        if total_components > 0:
+             current_assets = total_components
     # ----------------------------
     # CASH FLOW
     # ----------------------------
@@ -216,16 +236,21 @@ def compute_metrics(ticker):
     roe = safe_div(net_income, equity)
 
     # ----------------------------
-    # ROIC (Cleaner)
+    # ROIC (Improved Invested Capital)
     # ----------------------------
+
+    cash = find_value(balance, [
+        "Cash And Cash Equivalents",
+        "Cash"
+    ]) or 0
 
     invested_capital = None
     if debt is not None and equity is not None:
-        invested_capital = debt + equity
+        invested_capital = debt + equity - cash
 
     roic = None
     if op_income is not None and invested_capital not in (None, 0):
-        tax_rate = 0.21  # conservative default
+        tax_rate = 0.21
         nopat = op_income * (1 - tax_rate)
         roic = safe_div(nopat, invested_capital)
 
@@ -386,7 +411,7 @@ if st.session_state.run:
     </tr>
     <tr>
         <td>Return on Invested Capital (ROIC)</td>
-        <td>NOPAT ÷ (Debt + Equity)</td>
+        <td>NOPAT ÷ (Debt + Equity − Cash)</td>
         <td>&gt; 15%</td>
         <td>{color_value(fmt_pct(metrics["roic"]), roic_pass)}</td>
         <td>Buffett: Best single measure of business quality.</td>
@@ -433,10 +458,10 @@ if st.session_state.financials:
             st.session_state.financial_view = "income"
 
         if st.button("Balance Sheet", key="balance_btn"):
-        st.session_state.financial_view = "balance"
+            st.session_state.financial_view = "balance"
 
         if st.button("Cash Flow", key="cashflow_btn"):
-        st.session_state.financial_view = "cashflow"
+            st.session_state.financial_view = "cashflow"
 
     st.markdown("</div>", unsafe_allow_html=True)
 
