@@ -46,6 +46,14 @@ div.stButton > button {
     padding: 4px 10px;
 }
 
+.section-bar {
+    background-color: #0b3d5c;
+    text-align: center;
+    font-weight: 600;
+    font-size: 16px;
+    padding: 8px;
+}
+
 /* Remove extra column spacing */
 div[data-testid="column"] {
     padding-left: 4px !important;
@@ -210,6 +218,22 @@ def compute_metrics(ticker):
         "Free Cash Flow"
     ])
 
+    # ----------------------------
+    # FCF STABILITY (5-Year Test)
+    # ----------------------------
+
+    fcf_stability = None
+
+    if cashflow is not None and "Free Cash Flow" in cashflow.index:
+        fcf_series = cashflow.loc["Free Cash Flow"]
+
+        # Reverse to chronological order
+        fcf_series = fcf_series[::-1]
+
+        if len(fcf_series) >= 5:
+            last5 = fcf_series.iloc[-5:]
+            fcf_stability = all(x > 0 for x in last5 if x is not None)
+
     if capex is not None:
         capex = abs(capex)
 
@@ -262,6 +286,7 @@ def compute_metrics(ticker):
         "fcf_margin": fcf_margin,
         "roe": roe,
         "roic": roic,
+        "fcf_stability": fcf_stability,
     }
 
 # ----------------------------
@@ -315,7 +340,12 @@ if st.session_state.run:
     html_section1 = f"""
     <table>
     <tr>
-        <th class="col-metric">Metric</th>
+        <th colspan="5" class="section-bar">
+            Can this company survive bad times?
+        </th>
+    </tr>
+    <tr>
+    <th class="col-metric">Metric</th>
         <th class="col-formula">Formula</th>
         <th class="col-threshold">Threshold</th>
         <th class="col-value">Current Value</th>
@@ -326,21 +356,21 @@ if st.session_state.run:
         <td>Total Debt ÷ Shareholders' Equity</td>
         <td>&lt; 0.5</td>
         <td>{color_value(fmt_num(metrics["debt_equity"]), debt_pass)}</td>
-        <td>Buffett: Avoid businesses that need good years just to survive.</td>
+        <td>Buffett: “I don’t like businesses that need a good year just to survive.”</td>
     </tr>
     <tr>
         <td>Current Ratio</td>
         <td>Current Assets ÷ Current Liabilities</td>
         <td>&gt; 1.5</td>
         <td>{color_value(fmt_num(metrics["current_ratio"]), current_pass)}</td>
-        <td>Measures short-term liquidity strength.</td>
+        <td>MMeasures short-term liquidity — whether the company can comfortably pay its bills over the next 12 months.</td>
     </tr>
     <tr>
         <td>Interest Coverage</td>
         <td>Operating Income ÷ Interest Expense</td>
         <td>&gt; 5</td>
         <td>{color_value(fmt_num(metrics["interest_coverage"]), interest_pass)}</td>
-        <td>Lynch: Debt can turn a small problem into a disaster.</td>
+        <td>Lynch: “Debt can turn a small problem into a disaster.”</td>
     </tr>
     </table>
     """
@@ -359,7 +389,11 @@ if st.session_state.run:
     html_section2 = f"""
     <table>
     <tr>
-        <th class="col-metric">Metric</th>
+        <th colspan="5" class="section-bar">
+            Are the earnings real and durable?
+        </th>
+    </tr>
+    <th class="col-metric">Metric</th>
         <th class="col-formula">Formula</th>
         <th class="col-threshold">Threshold</th>
         <th class="col-value">Current Value</th>
@@ -370,14 +404,22 @@ if st.session_state.run:
         <td>Free Cash Flow ÷ Net Income</td>
         <td>&gt; 0.8</td>
         <td>{color_value(fmt_num(metrics["fcf_conversion"]), fcf_conv_pass)}</td>
-        <td>Buffett: Earnings without cash are a hallucination.</td>
+        <td>Buffett: “Earnings without cash are a hallucination.”</td>
+    </tr>
+    <tr>
+        <td>FCF Stability</td>
+        <td>FAIL if any of last 5 years ≤ 0</td>
+        <td>PASS</td>
+        <td>{color_value("PASS" if metrics["fcf_stability"] else "FAIL",
+                        metrics["fcf_stability"] == True)}</td>
+        <td>Lynch: If it makes money in good times but not in bad, it’s not a great business.</td>
     </tr>
     <tr>
         <td>FCF Margin (TTM)</td>
         <td>Free Cash Flow ÷ Revenue</td>
         <td>&gt; 15%</td>
         <td>{color_value(fmt_pct(metrics["fcf_margin"]), fcf_margin_pass)}</td>
-        <td>Indicates pricing power & operating efficiency.</td>
+        <td>Measures how much free cash flow a company generates from each dollar of revenue, indicating pricing power and operating efficiency.</td>
     </tr>
     </table>
     """
@@ -396,7 +438,11 @@ if st.session_state.run:
     html_section3 = f"""
     <table>
     <tr>
-        <th class="col-metric">Metric</th>
+        <th colspan="5" class="section-bar">
+            Can it compound capital?
+        </th>
+    </tr>
+    <th class="col-metric">Metric</th>
         <th class="col-formula">Formula</th>
         <th class="col-threshold">Threshold</th>
         <th class="col-value">Current Value</th>
@@ -407,14 +453,14 @@ if st.session_state.run:
         <td>Net Income ÷ Shareholders' Equity</td>
         <td>&gt; 20%</td>
         <td>{color_value(fmt_pct(metrics["roe"]), roe_pass)}</td>
-        <td>Lynch: Companies earning 20%+ can grow very fast.</td>
+        <td>Lynch: Companies that can earn 20%+ on equity and reinvest it grow very fast.</td>
     </tr>
     <tr>
         <td>Return on Invested Capital (ROIC)</td>
         <td>NOPAT ÷ (Debt + Equity − Cash)</td>
         <td>&gt; 15%</td>
         <td>{color_value(fmt_pct(metrics["roic"]), roic_pass)}</td>
-        <td>Buffett: Best single measure of business quality.</td>
+        <td>Buffett: “The single best measure of business quality is return on capital.”</td>
     </tr>
     </table>
     """
