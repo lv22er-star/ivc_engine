@@ -314,6 +314,9 @@ with btn1:
         st.session_state.run = not st.session_state.run
         st.session_state.financials = False
 
+    if st.button("Classify", use_container_width=True):
+        st.session_state["show_classify"] = not st.session_state.get("show_classify", False)
+
 with btn2:
     if st.button("Financials"):
         st.session_state.financials = not st.session_state.financials
@@ -535,3 +538,35 @@ if st.session_state.financials:
     if st.session_state.financial_view == "cashflow" and cashflow is not None:
         st.markdown("### Cash Flow (Millions)")
         render_table(cashflow)
+
+# ----------------------------
+# Show The Classify Section Inline
+# ----------------------------
+
+
+    if st.session_state.get("show_classify", False):
+
+        st.divider()
+        st.header("Business Classification & Routing")
+
+        left, middle, right = st.columns([1.2, 1.5, 1])
+
+        with left:
+            st.subheader("Thresholds (Edit as needed)")
+            st.number_input("1) Net PP&E / Total Assets >", value=0.40)
+            st.number_input("2) CapEx / Revenue >", value=0.15)
+            st.number_input("3) Debt / EBITDA >", value=3.50)
+            st.number_input("4) D&A / Revenue >", value=0.10)
+            st.number_input("5) EBITDAR / Invested Capital >", value=0.002)
+            st.number_input("6) Asset Yield (Stability Test) >", value=0.08)
+
+        with middle:
+            st.subheader("Signals (auto-calculated)")
+            st.write("Signal table will render here.")
+
+        with right:
+            st.subheader("Outputs")
+            st.write("Infrastructure Signals Passed: 0")
+            st.write("Infra Classification (3+ signals): FAIL")
+            st.write("Too Early / Build Phase Flag: PASS")
+            st.write("Routed Model: OWNER_EARNINGS_DCF")    
