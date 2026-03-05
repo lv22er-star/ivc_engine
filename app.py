@@ -1141,6 +1141,17 @@ if st.session_state.show_classify:
         p_margin_range = None
     else:
         p_margin_range = s_margin_range <= th_margin_range
+
+    # ----------------------------
+    # Revenue CAGR (5Y)
+    # ----------------------------
+
+    s_rev_cagr = None
+    years_rev = 0
+
+    if rev_series and len(rev_series) >= 2:
+        s_rev_cagr, years_rev = cagr_from_series(rev_series)
+
     # Share Count CAGR (5Y): prefer statement row; fallback to info sharesOutstanding only if no history => N/A
     share_labels = [
         "Diluted Average Shares",
@@ -1187,6 +1198,26 @@ if st.session_state.show_classify:
             years_reinvest = 1
     p_reinvest = None if s_reinvest is None else (s_reinvest < th_reinvest)
 
+    # ----------------------------
+    # FCF Margin (Latest)
+    # ----------------------------
+
+    fcf_margin_latest = None
+
+    if cfo_series and capex_series and rev_series:
+
+        cfo_latest = cfo_series[-1]
+        capex_latest = capex_series[-1]
+        rev_latest = rev_series[-1]
+
+        if (
+            cfo_latest is not None
+            and capex_latest is not None
+            and rev_latest not in (None, 0)
+        ):
+            free_cash_flow = cfo_latest - capex_latest
+            fcf_margin_latest = free_cash_flow / rev_latest
+
     # Margin Trend (3Y): Improving / Declining / Flat / N/A
     trend_label = "N/A"
     p_margin_trend = None
@@ -1205,6 +1236,41 @@ if st.session_state.show_classify:
         p_margin_trend = True if trend_label == "Improving" else False
         # if fewer than 3 points, keep pass/fail but label years
     years_trend = len(m3)
+
+    def get_signal_type(metric):
+
+        if "Net PPE" in metric:
+            return "Capital Intensity"
+
+        elif "CapEx / Revenue" in metric:
+            return "Capital Intensity"
+
+        elif "Debt / EBITDA" in metric:
+            return "Leverage"
+
+        elif "D&A / Revenue" in metric:
+            return "Capital Intensity"
+
+        elif "EBITDAR / Invested Capital" in metric:
+            return "Asset Yield"
+
+        elif "Asset Yield" in metric:
+            return "Asset Yield"
+
+        elif "Operating Margin Range" in metric:
+            return "Stability"
+
+        elif "Share Count CAGR" in metric:
+            return "Capital Allocation"
+
+        elif "Reinvestment Rate" in metric:
+            return "Capital Allocation"
+
+        elif "Margin Trend" in metric:
+            return "Stability"
+
+        else:
+            return "Other"
 
     # ----------------------------
     # MIDDLE: Signals table
@@ -1298,11 +1364,27 @@ if st.session_state.show_classify:
             value_is_pct=False
         ))
 
+
+
         import pandas as pd
+
+        signal_types = {
+            "Net PPE / Total Assets": "Capital Intensity",
+            "CapEx / Revenue": "Capital Intensity",
+            "Debt / EBITDA": "Leverage",
+            "D&A / Revenue": "Capital Intensity",
+            "EBITDAR / Invested Capital": "Asset Yield",
+            "Asset Yield (Stability Test)": "Asset Yield",
+            "Operating Margin Range (5Y)": "Stability",
+            "Share Count CAGR (5Y)": "Capital Allocation",
+            "Reinvestment Rate (CapEx/CFO)": "Capital Allocation",
+            "Margin Trend (3Y)": "Stability"
+        }
 
         display_rows = []
 
         for r in rows:
+
             raw_pass = r["_pass_raw"]
 
             if raw_pass is True:
@@ -1313,6 +1395,7 @@ if st.session_state.show_classify:
                 pass_display = "N/A"
 
             display_rows.append({
+                "Signal Type": get_signal_type(r["Metric"]),
                 "Metric": r["Metric"],
                 "Value": r["Value"],
                 "Threshold": r["Threshold"],
@@ -1320,7 +1403,6 @@ if st.session_state.show_classify:
             })
 
         df_display = pd.DataFrame(display_rows)
-
         df_display = df_display.reset_index(drop=True)
 
         st.table(df_display)
@@ -1350,36 +1432,8 @@ if st.session_state.show_classify:
 
         asset_yield_pass = pass_of("Asset Yield (Stability Test)")
 
-        st.write(f"Infrastructure Signals Passed: {infra_count}")
-
-        # Infra Classification:
-        # PASS if count >= 3 AND Asset Yield PASS (stability gate)
-        infra_class = None
-        if asset_yield_pass is None:
-            infra_class = False  # stability gate missing => fail classification
-        else:
-            infra_class = (infra_count >= 3) and (asset_yield_pass is True)
-
-        st.write("Infra Classification (3+ signals + Asset Yield gate):", "PASS" if infra_class else "FAIL")
-
-        # Too Early / Build Phase Flag:
-        # PASS if Revenue CAGR positive AND FCF margin positive
-        rev_cagr, rev_pts = cagr_from_series(rev_series if rev_series else [])
-        fcf_margin_latest = None
-        if (cfo is not None) and (capex is not None) and (revenue not in (None, 0)):
-            fcf_latest = cfo - capex  # CapEx treated positive outflow
-            fcf_margin_latest = fcf_latest / revenue
-
-        too_early_flag = None
-        # require at least 2 points for rev CAGR
-        if rev_cagr is not None and rev_pts >= 2 and fcf_margin_latest is not None:
-            too_early_flag = (rev_cagr > 0) and (fcf_margin_latest > 0)
-
-        st.write(
-            "Too Early / Build Phase Flag:",
-            "PASS" if too_early_flag is True else ("FAIL" if too_early_flag is False else "N/A"),
-        )
-
+        infra_class = infra_count >= 3 and asset_yield_pass
+             
         # Routing logic + Why
         routed = "OWNER_EARNINGS_DCF"
         reasons = []
@@ -1418,12 +1472,149 @@ if st.session_state.show_classify:
                 routed = "OWNER_EARNINGS_DCF"
                 reasons.append("Default route: stable enough for Owner Earnings DCF.")
 
+        # ----------------------------
+        # BUSINESS TYPE DETECTION
+        # ----------------------------
+
+        business_type = "General Operating Business"
+
+        # Infrastructure heavy companies
+        if infra_class is True:
+            business_type = "Capital Intensive Infrastructure Business"
+
+        # Shareholder yield compounders
+        elif p_share_cagr is True and fcf_margin_latest is not None and fcf_margin_latest > 0:
+            business_type = "Shareholder Yield Compounder"
+
+        # Asset-light platform style
+        elif s_net_ppe is not None and s_net_ppe < 0.25 and s_capex_rev is not None and s_capex_rev < 0.10:
+            business_type = "Platform / Asset-Light Business"
+
+        # Cyclical / volatile companies
+        elif p_margin_range is False:
+            business_type = "Cyclical / Volatile Business"
+
+        st.markdown("### Business Type")
+        st.write(business_type)
+
         st.write("Routed Model:", routed)
+
+        
+
+        # ----------------------------
+        # MODEL DESCRIPTION
+        # ----------------------------
+
+        model_explanations = {
+
+        "OWNER_EARNINGS_DCF":
+        "Used for stable businesses that generate consistent cash flow and reinvest at steady rates.",
+
+        "REPURCHASE_ADJUSTED_FCF_DCF":
+        "Used when the company aggressively buys back shares and shareholder yield drives returns.",
+
+        "INFRASTRUCTURE_BUILD_DCF":
+        "Used for capital intensive companies that require large reinvestment before cash flows scale.",
+
+        "GROWTH_NORMALIZATION_DCF":
+        "Used when margins or growth are volatile and earnings must be normalized across cycles."
+        }
+
+        model_key = routed.split(" ")[0]
+
+        if model_key in model_explanations:
+            st.markdown("### Why This Valuation Model?")
+            st.write(model_explanations[model_key])
+
+        # ----------------------------
+        # ADDITIONAL DIAGNOSTICS
+        # ----------------------------
+
+        # --- Business Quality Score ---
+        signal_values = [
+            p_net_ppe,
+            p_capex_rev,
+            p_debt_ebitda,
+            p_da_rev,
+            p_ebitdar_ic,
+            p_asset_yield,
+            p_margin_range,
+            p_share_cagr,
+            p_reinvest,
+            p_margin_trend
+        ]
+
+        valid_signals = [x for x in signal_values if x is not None]
+
+        if valid_signals:
+            score = sum(1 for x in valid_signals if x) / len(valid_signals)
+        else:
+            score = None
+
+        st.markdown("### Business Quality Score")
+
+        if score is not None:
+            st.progress(score)
+            st.write(f"{round(score*100)}% of signals passing")
+        else:
+            st.write("Not enough data")
+
+
+        # --- Routing Confidence ---
+        st.markdown("### Routing Confidence")
+
+        infra_signals_total = len([x for x in infra_pass_list if x is not None])
+        infra_signals_pass = sum(1 for x in infra_pass_list if x)
+
+        if infra_signals_total > 0:
+            routing_conf = infra_signals_pass / infra_signals_total
+            st.progress(routing_conf)
+            st.write(f"{round(routing_conf*100)}% infrastructure signal strength")
+        else:
+            st.write("Not enough signals")
+
+
+        # --- Business Structure Label ---
+        structure_map = {
+            "OWNER_EARNINGS_DCF": "Stable Operating Business",
+            "REPURCHASE_ADJUSTED_FCF_DCF": "Shareholder Yield Compounder",
+            "INFRASTRUCTURE_BUILD_DCF": "Capital Intensive Asset Builder",
+            "GROWTH_NORMALIZATION_DCF": "Volatile / Transitional Business"
+        }
+
+        structure = structure_map.get(routed.split(" ")[0], "General Business")
+
+        st.markdown("### Business Structure")
+        st.write(structure)
+
+        # ----------------------------
+        # FINAL INVESTMENT VERDICT
+        # ----------------------------
+
+        st.markdown("### Investment Verdict")
+
+        if score is not None:
+
+            if score >= 0.7:
+                st.success("🟢 High Quality Business — Worth Investigating Further")
+
+            elif score >= 0.4:
+                st.warning("🟡 Mixed Quality — Requires Deeper Analysis")
+
+            else:
+                st.error("🔴 Weak Business Fundamentals")
+
+        else:
+            st.info("Not enough signals to form a verdict")
 
         why = " • ".join(reasons[:4]) if reasons else "N/A"
         st.caption(f"Why this model: {why}")
 
         # Helpful small diagnostics (optional but safe)
         st.markdown("---")
-        st.write("Revenue CAGR:", fmt_pct(rev_cagr) if rev_cagr is not None else "N/A")
-        st.write("FCF Margin (latest):", fmt_pct(fcf_margin_latest) if fcf_margin_latest is not None else "N/A")
+
+        rev_display = fmt_pct(s_rev_cagr) if 's_rev_cagr' in locals() and s_rev_cagr is not None else "N/A"
+        fcf_display = fmt_pct(fcf_margin_latest) if 'fcf_margin_latest' in locals() and fcf_margin_latest is not None else "N/A"
+
+        st.write("Revenue CAGR:", rev_display)
+        st.write("FCF Margin (latest):", fcf_display)
