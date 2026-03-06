@@ -786,6 +786,44 @@ if st.session_state.show_classify:
             "th_reinvest": 0.60,
             "trend_mode": "Improving Only"
         },
+        "Semiconductors": {
+            "th_net_ppe": 0.30,
+            "th_capex_rev": 0.12,
+            "th_debt_ebitda": 3.00,
+            "th_da_rev": 0.10,
+            "th_ebitdar_ic": 0.003,
+            "th_asset_yield": 0.10,
+            "th_margin_range": 0.35,
+            "th_share_cagr": 0.02,
+            "th_reinvest": 0.65,
+            "trend_mode": "Improving Only"
+        },
+
+        "Healthcare Plans / Providers": {
+            "th_net_ppe": 0.20,
+            "th_capex_rev": 0.05,
+            "th_debt_ebitda": 4.50,
+            "th_da_rev": 0.05,
+            "th_ebitdar_ic": 0.002,
+            "th_asset_yield": 0.08,
+            "th_margin_range": 0.20,
+            "th_share_cagr": 0.02,
+            "th_reinvest": 0.40,
+            "trend_mode": "Improving Only"
+        },
+
+        "Energy / E&P": {
+            "th_net_ppe": 0.45,
+            "th_capex_rev": 0.18,
+            "th_debt_ebitda": 3.00,
+            "th_da_rev": 0.12,
+            "th_ebitdar_ic": 0.003,
+            "th_asset_yield": 0.10,
+            "th_margin_range": 0.40,
+            "th_share_cagr": 0.02,
+            "th_reinvest": 0.70,
+            "trend_mode": "Improving Only"
+        },
         "Cyclical / Commodity": {
             "th_net_ppe": 0.40,
             "th_capex_rev": 0.15,
@@ -1444,15 +1482,10 @@ if st.session_state.show_classify:
             reasons.append("Financial company detected (many infra signals not applicable).")
         else:
             # 1) Infra PASS and not Too Early => INFRASTRUCTURE_BUILD_DCF
-            if infra_class is True and (too_early_flag is True or too_early_flag is None):
-                # If Too Early is N/A, we still allow infra build, but note uncertainty
+            if infra_class is True:
                 routed = "INFRASTRUCTURE_BUILD_DCF"
                 reasons.append("Infra classification PASS (>=3 + Asset Yield gate).")
-                if too_early_flag is True:
-                    reasons.append("Not too early: revenue growth + positive FCF margin.")
-                else:
-                    reasons.append("Too Early flag N/A (limited data), defaulting to Infra build due to infra strength.")
-
+                
             # 2) Repurchase-adjusted if strong buybacks and FCF margin positive
             elif (p_share_cagr is True) and (fcf_margin_latest is not None and fcf_margin_latest > 0):
                 routed = "REPURCHASE_ADJUSTED_FCF_DCF"
